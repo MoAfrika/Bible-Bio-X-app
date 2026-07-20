@@ -1,0 +1,98 @@
+{
+  "theme": "Dark Theme (Midnight & Gold) + Light Theme (Ash & Gold)",
+  "emotional_archetype": "Luxury (Premium, Depth, Mystery) blended with Organic & Earthy (Calm). Should feel reverent, peaceful, enlightening, and trustworthy. Avoid standard SaaS aesthetics.",
+  "typography": {
+    "font_families": {
+      "headings": "Cormorant Garamond, serif",
+      "body": "Manrope, sans-serif"
+    },
+    "scales": {
+      "h1": "text-4xl sm:text-5xl tracking-tight leading-none",
+      "h2": "text-2xl sm:text-3xl tracking-tight",
+      "h3": "text-xl sm:text-2xl",
+      "body": "text-base leading-relaxed",
+      "labels": "text-xs tracking-[0.2em] uppercase"
+    },
+    "rules": "Never use Inter for headings. Ensure H1 uses Cormorant Garamond. Use font-light for elegance or font-medium for legibility. Body text in Manrope must have loose line height (leading-relaxed) for reading long verses or sermons."
+  },
+  "colors": {
+    "dark_mode": {
+      "background": "#080B11",
+      "surface": "rgba(255, 255, 255, 0.03)",
+      "primary": "#D4AF37",
+      "text_primary": "#F3F4F6",
+      "text_secondary": "#9CA3AF",
+      "border": "rgba(255, 255, 255, 0.1)"
+    },
+    "light_mode": {
+      "background": "#F9FAFB",
+      "surface": "#FFFFFF",
+      "primary": "#B48A3A",
+      "text_primary": "#111827",
+      "text_secondary": "#4B5563",
+      "border": "rgba(0, 0, 0, 0.05)"
+    },
+    "rules": "Avoid pure black. Use the Soft Gold sparingly as an accent for active states, primary buttons, and icons. Ensure minimum 4.5:1 contrast ratio for all text."
+  },
+  "surfaces_and_visuals": {
+    "glassmorphism": "Use 'Crystal Glass' for headers, bottom nav, and floating cards. Dark mode: bg-white/5 backdrop-blur-xl border border-white/10. Light mode: bg-white/70 backdrop-blur-xl border border-black/5.",
+    "borders": "1px delicate inner stroke is MANDATORY to separate glass from background.",
+    "shadows": "Ambient diffuse shadows. No harsh drop shadows. shadow-[0_8px_32px_rgba(0,0,0,0.12)]"
+  },
+  "grids_and_layouts": {
+    "mobile_first": "App must be designed mobile-first. Wrap main app in a container like max-w-md mx-auto min-h-screen relative overflow-hidden if viewed on desktop, to simulate mobile app feel.",
+    "spacing": "Generous spacing. Use p-6 inside cards. Use gap-6 or gap-8 between major sections.",
+    "tools_grid": "Bento Grid Mode: grid-cols-2 gap-4 for the 8 AI tools. Cards should have a consistent height, icons aligned top-left.",
+    "navigation": "Bottom Navigation Bar for mobile: fixed bottom-0 w-full z-50 glassmorphism. Include Home, Study (Tools), Prayer, Profile."
+  },
+  "components_strategy": {
+    "cards": "Use raw div/section with Tailwind for layout cards to achieve the glass look. Avoid rigid Shadcn Card if it restricts the aesthetic.",
+    "buttons": "Pill-shaped (rounded-full). Primary: Gold background, dark text, hover:brightness-110. Secondary: Glass background, white text, subtle gold border.",
+    "forms_inputs": "Use Shadcn Input/Select but HEAVILY CUSTOMIZE to remove 'Vercel-look'. Make inputs rounded-xl, bg-white/5, border-white/10, focus:border-[#D4AF37].",
+    "icons": "Use lucide-react with strokeWidth={1.5} for an elegant, non-chunky look."
+  },
+  "motion_and_interactions": {
+    "page_transitions": "Use Framer Motion in .js/.jsx files: initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: 'easeOut' }}.",
+    "micro_interactions": "Tap states on cards and buttons: whileTap={{ scale: 0.98 }}.",
+    "hover_states": "Must explicitly set text color on hover. hover:bg-white/10 for glass cards.",
+    "loaders": "Serene breathing/pulsing effect. Avoid fast spinning circles. Use a soft glowing pulse."
+  },
+  "accessibility": {
+    "contrast": "Ensure text over images has a heavy gradient overlay (bg-gradient-to-t from-black/80 via-black/40 to-transparent).",
+    "focus": "focus-visible:ring-2 focus-visible:ring-[#D4AF37] focus-visible:outline-none.",
+    "test_ids": "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='tool-card-verse-lookup')."
+  },
+  "media_and_images": {
+    "rules": "Use beautiful, serene imagery for Verse of the Day or Hero sections. Ensure overlays are dark enough. Never use placeholder URLs.",
+    "image_urls": [
+      {
+        "url": "https://images.pexels.com/photos/38409470/pexels-photo-38409470.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Peaceful mountain sunset landscape. Use for Verse of the Day background or Home Hero.",
+        "category": "hero_background"
+      },
+      {
+        "url": "https://images.pexels.com/photos/7076710/pexels-photo-7076710.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Dimly lit open Bible vintage aesthetic. Use for Daily Devotional or Sermon Architect header.",
+        "category": "section_header"
+      },
+      {
+        "url": "https://images.pexels.com/photos/28640143/pexels-photo-28640143.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Calm water reflection sunrise. Use for Mood/Spirit Check-in or Prayer Hub background.",
+        "category": "ambient_background"
+      }
+    ]
+  },
+  "universal_guidelines": {
+    "instructions_to_main_agent": [
+      "Implement Dark Theme by default using the deep midnight and soft gold palette.",
+      "DO NOT center align the app container. Preserve left-alignment for readable texts, especially long Bible verses.",
+      "Never use universal transitions (transition: all). Use specific transitions like transition-colors or transition-transform.",
+      "Use sonner for toasts, customized with glassmorphism to match the app.",
+      "Install and use lucide-react for icons.",
+      "Ensure all 8 AI tools are visually distinct but unified under the Bento grid layout on the Study/Tools page.",
+      "Include a 'Back' button in the header of sub-pages for Navigation History.",
+      "DO NOT use a fully transparent background for the bottom navigation or sticky headers. Always use a blur and slight color tint.",
+      "IMPORTANT: Provide code for .js and .jsx files, not .tsx. Do not use TypeScript syntax."
+    ]
+  }
+}
