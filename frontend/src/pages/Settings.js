@@ -52,12 +52,29 @@ export default function Settings() {
       <h2 className="text-xl font-bold">Settings</h2>
       
       <div className="glass p-4 rounded-xl space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-semibold">{user?.name}</div>
-            <div className="text-xs text-[var(--text-secondary)]">{user?.email}</div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            {user?.picture ? (
+              <img 
+                src={user.picture} 
+                alt={user.name}
+                className="w-10 h-10 rounded-full flex-shrink-0"
+                data-testid="user-avatar"
+              />
+            ) : (
+              <div 
+                className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold"
+                style={{ background: 'var(--primary)', color: '#000' }}
+              >
+                {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold truncate">{user?.name}</div>
+              <div className="text-xs text-[var(--text-secondary)] truncate">{user?.email}</div>
+            </div>
           </div>
-          <div className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider" style={{ background: 'var(--elevated)', color: 'var(--primary)' }}>
+          <div className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex-shrink-0" style={{ background: 'var(--elevated)', color: 'var(--primary)' }}>
             {user?.role}
           </div>
         </div>

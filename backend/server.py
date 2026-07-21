@@ -72,6 +72,32 @@ def create_refresh_token(user_id: str) -> str:
 
 # ==================== AUTH HELPER ====================
 async def get_current_user(request: Request) -> dict:
+    # Try Google OAuth session_token first
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            possible_token = auth_header[7:]
+            # Check if this token looks like a session token (not a JWT)
+            if not possible_token.count(".") == 2:
+                session_token = possible_token
+    
+    if session_token:
+        session_doc = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
+        if session_doc:
+            expires_at = session_doc["expires_at"]
+            if isinstance(expires_at, str):
+                expires_at = datetime.fromisoformat(expires_at)
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at >= datetime.now(timezone.utc):
+                user = await db.users.find_one({"user_id": session_doc["user_id"]}, {"_id": 0, "password_hash": 0})
+                if user:
+                    # Normalize: expose id field
+                    user["_id"] = user.get("user_id", "")
+                    return user
+    
+    # Fall back to JWT access_token
     token = request.cookies.get("access_token")
     if not token:
         auth_header = request.headers.get("Authorization", "")
@@ -132,7 +158,9 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: str
-    created_at: datetime
+    created_at: Optional[datetime] = None
+    picture: Optional[str] = None
+    auth_provider: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
@@ -278,10 +306,106 @@ async def login(input: LoginInput, response: Response, request: Request):
     return user
 
 @api_router.post("/auth/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    # Delete Google session from DB if present
+    session_token = request.cookies.get("session_token")
+    if session_token:
+        await db.user_sessions.delete_one({"session_token": session_token})
+    
     response.delete_cookie(key="access_token", path="/")
     response.delete_cookie(key="refresh_token", path="/")
+    response.delete_cookie(key="session_token", path="/")
     return {"message": "Logged out successfully"}
+
+@api_router.post("/auth/session")
+async def google_oauth_session(request: Request, response: Response):
+    """Exchange Emergent Auth session_id for a session_token cookie."""
+    session_id = request.headers.get("X-Session-ID")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="Missing X-Session-ID header")
+    
+    # Call Emergent Auth to get user data
+    try:
+        async with httpx.AsyncClient() as http_client:
+            resp = await http_client.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_id},
+                timeout=15.0
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=401, detail="Invalid session")
+            data = resp.json()
+    except httpx.HTTPError as e:
+        logger.error(f"Emergent auth error: {e}")
+        raise HTTPException(status_code=502, detail="Auth service unreachable")
+    
+    email = data["email"].lower()
+    name = data.get("name", email.split("@")[0])
+    picture = data.get("picture", "")
+    session_token = data["session_token"]
+    
+    # Find or create user
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing and existing.get("user_id"):
+        user_id = existing["user_id"]
+        # Update name/picture if changed
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"name": name, "picture": picture}}
+        )
+    elif existing:
+        # Legacy user without user_id (JWT-registered) — link Google account
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.update_one(
+            {"email": email},
+            {"$set": {"user_id": user_id, "picture": picture, "auth_provider": "google"}}
+        )
+    else:
+        # Create new user
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.insert_one({
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "picture": picture,
+            "role": "user",
+            "auth_provider": "google",
+            "created_at": datetime.now(timezone.utc)
+        })
+    
+    # Store session
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.update_one(
+        {"session_token": session_token},
+        {"$set": {
+            "user_id": user_id,
+            "session_token": session_token,
+            "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc)
+        }},
+        upsert=True
+    )
+    
+    # Set httpOnly cookie
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=7 * 24 * 60 * 60,
+        path="/"
+    )
+    
+    return {
+        "_id": user_id,
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "picture": picture,
+        "role": "user",
+        "auth_provider": "google"
+    }
 
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(user: dict = Depends(get_current_user)):
