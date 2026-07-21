@@ -1,15 +1,44 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
+const STREAM_UPDATE_DEBOUNCE_MS = 100; // Batch updates every 100ms
 
 export default function Prayer() {
   const [topic, setTopic] = useState('');
   const [tone, setTone] = useState('Humble/Contrite');
   const [output, setOutput] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  const textBufferRef = useRef('');
+  const debounceTimerRef = useRef(null);
+
+  const flushBuffer = () => {
+    if (textBufferRef.current) {
+      setOutput(textBufferRef.current);
+    }
+  };
+
+  const addToBuffer = (content) => {
+    textBufferRef.current += content;
+    
+    // Clear previous timer and set new one
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    debounceTimerRef.current = setTimeout(flushBuffer, STREAM_UPDATE_DEBOUNCE_MS);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleGenerate = async () => {
     if (!topic.trim()) {
@@ -19,6 +48,7 @@ export default function Prayer() {
 
     setLoading(true);
     setOutput('');
+    textBufferRef.current = '';
 
     try {
       const response = await fetch(`${API_URL}/api/generate/prayer`, {
@@ -34,23 +64,30 @@ export default function Prayer() {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let text = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const content = line.slice(6);
-            if (content === '[DONE]') break;
-            text += content;
-            setOutput(text);
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const content = line.slice(6);
+              if (content === '[DONE]') {
+                flushBuffer();
+                break;
+              }
+              addToBuffer(content);
+            }
           }
         }
+      } catch (streamError) {
+        console.error('Stream reading error:', streamError);
+        flushBuffer();
+        toast.error('Connection interrupted while generating prayer');
       }
 
       toast.success('Prayer generated!');
@@ -59,6 +96,9 @@ export default function Prayer() {
       toast.error('Failed to generate prayer');
     } finally {
       setLoading(false);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
     }
   };
 
