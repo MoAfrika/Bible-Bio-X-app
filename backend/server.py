@@ -163,6 +163,7 @@ class UserResponse(BaseModel):
     auth_provider: Optional[str] = None
     premium_credits: int = 0
     is_new_user: bool = False
+    referral_code: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
@@ -367,7 +368,21 @@ async def google_oauth_session(request: Request, response: Response):
     else:
         # Create new user - grant welcome gift: 3 premium AI generations
         user_id = f"user_{uuid.uuid4().hex[:12]}"
-        await db.users.insert_one({
+        
+        # Handle referral: if X-Referral-Code header present and valid, credit referrer
+        referred_by = None
+        ref_code = request.headers.get("X-Referral-Code")
+        if ref_code:
+            referrer = await db.users.find_one({"referral_code": ref_code}, {"_id": 0, "user_id": 1, "email": 1})
+            if referrer:
+                referred_by = referrer.get("user_id") or referrer.get("email")
+                # Credit the referrer +1 premium credit
+                await db.users.update_one(
+                    {"referral_code": ref_code},
+                    {"$inc": {"premium_credits": 1}}
+                )
+        
+        new_user_doc = {
             "user_id": user_id,
             "email": email,
             "name": name,
@@ -377,7 +392,11 @@ async def google_oauth_session(request: Request, response: Response):
             "premium_credits": 3,
             "is_new_user": True,
             "created_at": datetime.now(timezone.utc)
-        })
+        }
+        if referred_by:
+            new_user_doc["referred_by"] = referred_by
+        
+        await db.users.insert_one(new_user_doc)
     
     # Store session
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -415,7 +434,8 @@ async def google_oauth_session(request: Request, response: Response):
         "role": "user",
         "auth_provider": "google",
         "premium_credits": fresh_user.get("premium_credits", 0),
-        "is_new_user": fresh_user.get("is_new_user", False)
+        "is_new_user": fresh_user.get("is_new_user", False),
+        "referral_code": fresh_user.get("referral_code")
     }
 
 @api_router.get("/auth/me", response_model=UserResponse)
@@ -612,6 +632,26 @@ async def stream_ai_response(prompt: str, system_message: str):
     )
 
 # ==================== PREMIUM CREDITS ====================
+def generate_referral_code() -> str:
+    """Generate a short, URL-safe referral code."""
+    return secrets.token_urlsafe(6).replace("_", "").replace("-", "")[:8]
+
+async def get_user_referral_code(user: dict) -> str:
+    """Return existing referral_code or create one for the user."""
+    user_id = user.get("user_id")
+    if user.get("referral_code"):
+        return user["referral_code"]
+    
+    # Generate unique code with retry
+    for _ in range(5):
+        code = generate_referral_code()
+        existing = await db.users.find_one({"referral_code": code}, {"_id": 0, "user_id": 1})
+        if not existing:
+            query = {"user_id": user_id} if user_id else {"email": user["email"]}
+            await db.users.update_one(query, {"$set": {"referral_code": code}})
+            return code
+    raise HTTPException(status_code=500, detail="Could not generate referral code")
+
 async def consume_premium_credit(user: dict) -> None:
     """Deduct one premium credit from user. Raises 402 if none available."""
     user_id = user.get("user_id")
@@ -631,12 +671,48 @@ async def consume_premium_credit(user: dict) -> None:
             status_code=402,
             detail="No premium credits remaining. Upgrade to continue enjoying premium AI generations."
         )
+    
+    # Generate referral code on first premium use (idempotent - only if missing)
+    if not user.get("referral_code"):
+        await get_user_referral_code(user)
 
 @api_router.get("/user/credits")
 async def get_credits(user: dict = Depends(get_current_user)):
+    # Re-fetch user to get fresh referral_code (may have just been generated)
+    user_id = user.get("user_id")
+    if user_id:
+        fresh = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
+    else:
+        fresh = await db.users.find_one({"email": user["email"]}, {"_id": 0, "password_hash": 0})
+    fresh = fresh or user
     return {
-        "premium_credits": user.get("premium_credits", 0),
-        "auth_provider": user.get("auth_provider", "email")
+        "premium_credits": fresh.get("premium_credits", 0),
+        "auth_provider": fresh.get("auth_provider", "email"),
+        "referral_code": fresh.get("referral_code"),
+        "is_new_user": fresh.get("is_new_user", False)
+    }
+
+@api_router.get("/user/referral")
+async def get_referral(request: Request, user: dict = Depends(get_current_user)):
+    """Get user's referral code + stats. Auto-generates code if user has used at least one premium credit."""
+    user_id = user.get("user_id")
+    query = {"user_id": user_id} if user_id else {"email": user["email"]}
+    fresh = await db.users.find_one(query, {"_id": 0, "password_hash": 0})
+    code = fresh.get("referral_code") if fresh else None
+    
+    referred_count = 0
+    if code and fresh:
+        referrer_id = fresh.get("user_id") or fresh.get("email")
+        referred_count = await db.users.count_documents({"referred_by": referrer_id})
+    
+    origin = request.headers.get("origin") or request.headers.get("referer", "").rstrip("/")
+    referral_url = f"{origin}/login?ref={code}" if code and origin else None
+    
+    return {
+        "referral_code": code,
+        "referral_url": referral_url,
+        "referred_count": referred_count,
+        "credits_earned": referred_count  # +1 credit per referral
     }
 
 @api_router.post("/user/dismiss-welcome")
@@ -811,6 +887,7 @@ Make it:
 @app.on_event("startup")
 async def startup_event():
     await db.users.create_index("email", unique=True)
+    await db.users.create_index("referral_code", sparse=True)
     await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
     await db.login_attempts.create_index("identifier")
     

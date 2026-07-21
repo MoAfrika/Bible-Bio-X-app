@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import PremiumToggle from '../../components/PremiumToggle';
+import ShareReferralModal from '../../components/ShareReferralModal';
 import { useAuth } from '../../context/AuthContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -14,7 +15,9 @@ export default function CharacterBio() {
   const [usePremium, setUsePremium] = useState(false);
   const [output, setOutput] = useState('');
   const [loading, setLoading] = useState(false);
-  const { refreshCredits } = useAuth();
+  const [shareOpen, setShareOpen] = useState(false);
+  const [referralData, setReferralData] = useState(null);
+  const { refreshCredits, fetchReferral, user } = useAuth();
 
   const handleGenerate = async () => {
     if (!characterName.trim()) {
@@ -65,7 +68,18 @@ export default function CharacterBio() {
       }
 
       toast.success(usePremium ? 'Premium biography generated!' : 'Biography generated!');
-      if (usePremium) await refreshCredits();
+      if (usePremium) {
+        const hadCodeBefore = !!user?.referral_code;
+        await refreshCredits();
+        // If this was the FIRST premium use, referral_code was just created — nudge to share
+        if (!hadCodeBefore) {
+          const data = await fetchReferral();
+          if (data?.referral_code) {
+            setReferralData(data);
+            setTimeout(() => setShareOpen(true), 800);
+          }
+        }
+      }
     } catch (error) {
       console.error('Error:', error);
       toast.error('Failed to generate biography');
@@ -149,6 +163,14 @@ export default function CharacterBio() {
           dangerouslySetInnerHTML={{ __html: output }}
         />
       )}
+
+      <ShareReferralModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        referralCode={referralData?.referral_code}
+        referralUrl={referralData?.referral_url}
+        referredCount={referralData?.referred_count || 0}
+      />
     </motion.div>
   );
 }

@@ -1,14 +1,27 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { Sun, Moon, LogOut, Sparkles } from 'lucide-react';
+import { Sun, Moon, LogOut, Sparkles, Gift, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import ShareReferralModal from '../components/ShareReferralModal';
 
 export default function Settings() {
-  const { user, logout, credits } = useAuth();
+  const { user, logout, credits, fetchReferral } = useAuth();
   const navigate = useNavigate();
   const [theme, setTheme] = useState('dark');
+  const [shareOpen, setShareOpen] = useState(false);
+  const [referralData, setReferralData] = useState(null);
+
+  const openReferral = async () => {
+    const data = await fetchReferral();
+    if (data?.referral_code) {
+      setReferralData(data);
+      setShareOpen(true);
+    } else {
+      toast.info('Use a premium generation to unlock your referral link');
+    }
+  };
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') || 'dark';
@@ -103,6 +116,29 @@ export default function Settings() {
       </div>
 
       <motion.button
+        data-testid="refer-friends-card"
+        onClick={openReferral}
+        whileTap={{ scale: 0.98 }}
+        className="w-full glass p-4 rounded-xl flex items-center justify-between text-left"
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center"
+            style={{ background: 'var(--elevated)' }}
+          >
+            <Gift className="w-5 h-5 text-[var(--primary)]" strokeWidth={1.5} />
+          </div>
+          <div>
+            <div className="text-sm font-semibold">Refer friends</div>
+            <div className="text-[10px] text-[var(--text-secondary)]">
+              +1 credit per friend
+            </div>
+          </div>
+        </div>
+        <ChevronRight className="w-5 h-5 text-[var(--text-secondary)]" strokeWidth={1.5} />
+      </motion.button>
+
+      <motion.button
         data-testid="theme-toggle-button"
         onClick={toggleTheme}
         whileTap={{ scale: 0.98 }}
@@ -124,6 +160,14 @@ export default function Settings() {
         <LogOut className="w-5 h-5" />
         Logout
       </motion.button>
+
+      <ShareReferralModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        referralCode={referralData?.referral_code}
+        referralUrl={referralData?.referral_url}
+        referredCount={referralData?.referred_count || 0}
+      />
     </motion.div>
   );
 }

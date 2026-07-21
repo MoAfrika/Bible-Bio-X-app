@@ -1,0 +1,33 @@
+{
+  "summary": "Tested the Referral System (iteration 4). Backend: 7/7 pytest cases pass covering null-code before premium, auto-generation on premium use, idempotency, /user/referral payload, sparse mongo index on referral_code, referred_count aggregation, and code-inspection of the 'new-user only' referral-credit branch in /auth/session. Frontend: verified /login?ref=CODE stores 'bibleBio_referral' in localStorage; Settings 'Refer friends' card opens ShareReferralModal; modal displays correct URL constructed from window.location.origin (preview.emergentagent.com domain, not internal cluster); copy button writes URL to navigator.clipboard; referred-count-display shows correct 'No friends joined yet' text. Pluralization + CharacterBio 800ms auto-open verified via code review (branch triggered only when hadCodeBefore=false). Real Google OAuth referral crediting was validated via source code inspection (test 07) since real emergent auth cannot be exercised in tests.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/user/referral", "issue": "referral_url built from Origin header may contain internal cluster URL when called from server-side; expected/known and mitigated on frontend by using window.location.origin. No fix needed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_referral.py",
+    "/app/test_reports/pytest/referral_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 976 lines — approaching threshold; consider splitting auth/referral/generate into modules.",
+    "consume_premium_credit generates referral_code inside credit-consumption path; consider extracting to a background task for latency (currently blocks the streaming response briefly).",
+    "Referral crediting on /auth/session lacks a self-referral guard (X-Referral-Code that matches the new user's own future code is impossible since new user has no code yet, but should still guard against a user setting ref code equal to their own email). Low priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_referral.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@biblebio.com / BibleAdmin2024! (used JWT cookie session for tests)",
+  "seed_data_creation": "During test 06, inserts a TEST_referred_<uuid>@example.com user with referred_by=<admin user_id> to verify counting. Auto-cleaned via autouse session fixture (regex ^TEST_).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest runner: `python -m pytest backend/tests/test_referral.py -v -o addopts=''` (pytest.ini forces xdist; disable via -o). Admin credentials work via JWT cookie login (requests.Session()) — access_token is NOT in login response body; auth is cookie-based. Referral autogeneration verified end-to-end on premium bio (requires character_name/focus/depth fields in POST /api/generate/bio). Google OAuth new-user referral credit path was NOT executed against real auth; inspected via source assertions in test_07."
+}

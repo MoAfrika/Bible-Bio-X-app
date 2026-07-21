@@ -53,9 +53,24 @@ export function AuthProvider({ children }) {
         withCredentials: true
       });
       setCredits(data.premium_credits || 0);
+      // If referral_code arrived (auto-generated on first premium use), attach to user
+      if (data.referral_code) {
+        setUser((prev) => (prev ? { ...prev, referral_code: data.referral_code } : prev));
+      }
       return data.premium_credits || 0;
     } catch (error) {
       return credits;
+    }
+  };
+
+  const fetchReferral = async () => {
+    try {
+      const { data } = await axios.get(`${API_URL}/api/user/referral`, {
+        withCredentials: true
+      });
+      return data;
+    } catch (error) {
+      return null;
     }
   };
 
@@ -122,7 +137,8 @@ export function AuthProvider({ children }) {
     checkAuth,
     credits,
     refreshCredits,
-    dismissWelcome
+    dismissWelcome,
+    fetchReferral
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

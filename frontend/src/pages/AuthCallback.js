@@ -30,15 +30,26 @@ export default function AuthCallback() {
       }
 
       try {
+        const refCode = localStorage.getItem('bibleBio_referral');
+        const headers = { 'X-Session-ID': sessionId };
+        if (refCode) {
+          headers['X-Referral-Code'] = refCode;
+        }
+        
         const { data } = await axios.post(
           `${API_URL}/api/auth/session`,
           {},
           {
-            headers: { 'X-Session-ID': sessionId },
+            headers,
             withCredentials: true
           }
         );
 
+        // Clear referral once consumed
+        if (refCode) {
+          localStorage.removeItem('bibleBio_referral');
+        }
+        
         // Clear hash from URL
         window.history.replaceState(null, '', window.location.pathname);
         // Refresh AuthContext so is_new_user + credits are set for welcome modal
