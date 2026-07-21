@@ -14,6 +14,7 @@ export default function Settings() {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     setTheme(savedTheme);
     if (savedTheme === 'light') {
+      document.documentElement.classList.add('light');
       document.body.classList.add('light');
     }
   }, []);
@@ -24,8 +25,10 @@ export default function Settings() {
     localStorage.setItem('theme', newTheme);
     
     if (newTheme === 'light') {
+      document.documentElement.classList.add('light');
       document.body.classList.add('light');
     } else {
+      document.documentElement.classList.remove('light');
       document.body.classList.remove('light');
     }
     

@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { UserCircle, Search, Sparkles, Scroll, BookOpen, Sun, MessageCircle, Star } from 'lucide-react';
 
 const tools = [
-  { id: 'bio', icon: UserCircle, label: 'Bio', path: '/app/tools/bio', description: 'Character biographies' },
-  { id: 'lookup', icon: Search, label: 'Lookup', path: '/app/tools/lookup', description: 'Find verses' },
-  { id: 'explainer', icon: Sparkles, label: 'Explain', path: '/app/tools/explainer', description: 'Verse explanations' },
-  { id: 'sermon', icon: Scroll, label: 'Sermon', path: '/app/tools/sermon', description: 'Sermon architect' },
-  { id: 'parable', icon: BookOpen, label: 'Parable', path: '/app/tools/parable', description: 'Parable explainer' },
-  { id: 'devotional', icon: Sun, label: 'Devo', path: '/app/tools/devotional', description: 'Daily devotional' },
-  { id: 'theologian', icon: MessageCircle, label: 'Theology', path: '/app/tools/theologian', description: 'Ask questions' },
-  { id: 'story', icon: Star, label: 'Kids', path: '/app/tools/story', description: "Children's stories" }
+  { id: 'character-bio', icon: UserCircle, label: 'Bio', path: '/app/tools/bio', description: 'Character biographies' },
+  { id: 'verse-lookup', icon: Search, label: 'Lookup', path: '/app/tools/lookup', description: 'Find verses' },
+  { id: 'verse-explainer', icon: Sparkles, label: 'Explain', path: '/app/tools/explainer', description: 'Verse explanations' },
+  { id: 'sermon-architect', icon: Scroll, label: 'Sermon', path: '/app/tools/sermon', description: 'Sermon architect' },
+  { id: 'parable-explainer', icon: BookOpen, label: 'Parable', path: '/app/tools/parable', description: 'Parable explainer' },
+  { id: 'daily-devotional', icon: Sun, label: 'Devo', path: '/app/tools/devotional', description: 'Daily devotional' },
+  { id: 'ask-theologian', icon: MessageCircle, label: 'Theology', path: '/app/tools/theologian', description: 'Ask questions' },
+  { id: 'children-story', icon: Star, label: 'Kids', path: '/app/tools/story', description: "Children's stories" }
 ];
 
 export default function Explore() {
