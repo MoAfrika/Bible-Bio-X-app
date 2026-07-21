@@ -2,14 +2,18 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import PremiumToggle from '../../components/PremiumToggle';
+import { useAuth } from '../../context/AuthContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export default function AskTheologian() {
   const [question, setQuestion] = useState('');
   const [complexity, setComplexity] = useState('Simplified');
+  const [usePremium, setUsePremium] = useState(false);
   const [output, setOutput] = useState('');
   const [loading, setLoading] = useState(false);
+  const { refreshCredits } = useAuth();
 
   const handleGenerate = async () => {
     if (!question.trim()) {
@@ -25,8 +29,16 @@ export default function AskTheologian() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ question, complexity })
+        body: JSON.stringify({ question, complexity, use_premium: usePremium })
       });
+
+      if (response.status === 402) {
+        toast.error('No premium credits remaining');
+        setUsePremium(false);
+        setLoading(false);
+        await refreshCredits();
+        return;
+      }
 
       if (!response.ok) throw new Error('Failed to generate answer');
 
@@ -51,7 +63,8 @@ export default function AskTheologian() {
         }
       }
 
-      toast.success('Answer generated!');
+      toast.success(usePremium ? 'Premium answer generated!' : 'Answer generated!');
+      if (usePremium) await refreshCredits();
     } catch (error) {
       console.error('Error:', error);
       toast.error('Failed to generate answer');
@@ -91,6 +104,8 @@ export default function AskTheologian() {
         <option>Simplified</option>
         <option>Academic</option>
       </select>
+      
+      <PremiumToggle enabled={usePremium} onChange={setUsePremium} />
       
       <motion.button
         data-testid="ask-theologian-button"

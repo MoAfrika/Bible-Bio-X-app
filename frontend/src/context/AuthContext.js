@@ -21,6 +21,7 @@ export function formatApiErrorDetail(detail) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [credits, setCredits] = useState(0);
 
   useEffect(() => {
     // CRITICAL: If returning from OAuth callback, skip the /me check.
@@ -38,10 +39,32 @@ export function AuthProvider({ children }) {
         withCredentials: true
       });
       setUser(data);
+      setCredits(data.premium_credits || 0);
     } catch (error) {
       setUser(false);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const refreshCredits = async () => {
+    try {
+      const { data } = await axios.get(`${API_URL}/api/user/credits`, {
+        withCredentials: true
+      });
+      setCredits(data.premium_credits || 0);
+      return data.premium_credits || 0;
+    } catch (error) {
+      return credits;
+    }
+  };
+
+  const dismissWelcome = async () => {
+    try {
+      await axios.post(`${API_URL}/api/user/dismiss-welcome`, {}, { withCredentials: true });
+      setUser((prev) => prev ? { ...prev, is_new_user: false } : prev);
+    } catch (error) {
+      console.error('Dismiss welcome error:', error);
     }
   };
 
@@ -53,6 +76,7 @@ export function AuthProvider({ children }) {
         { withCredentials: true }
       );
       setUser(data);
+      setCredits(data.premium_credits || 0);
       return { success: true };
     } catch (error) {
       return { 
@@ -70,6 +94,7 @@ export function AuthProvider({ children }) {
         { withCredentials: true }
       );
       setUser(data);
+      setCredits(data.premium_credits || 0);
       return { success: true };
     } catch (error) {
       return { 
@@ -94,7 +119,10 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
-    checkAuth
+    checkAuth,
+    credits,
+    refreshCredits,
+    dismissWelcome
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

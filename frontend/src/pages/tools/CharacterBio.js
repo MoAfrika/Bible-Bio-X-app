@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import PremiumToggle from '../../components/PremiumToggle';
+import { useAuth } from '../../context/AuthContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -9,8 +11,10 @@ export default function CharacterBio() {
   const [characterName, setCharacterName] = useState('');
   const [focus, setFocus] = useState('Full Life Arc');
   const [depth, setDepth] = useState('Detailed Breakdown');
+  const [usePremium, setUsePremium] = useState(false);
   const [output, setOutput] = useState('');
   const [loading, setLoading] = useState(false);
+  const { refreshCredits } = useAuth();
 
   const handleGenerate = async () => {
     if (!characterName.trim()) {
@@ -26,8 +30,16 @@ export default function CharacterBio() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ character_name: characterName, focus, depth })
+        body: JSON.stringify({ character_name: characterName, focus, depth, use_premium: usePremium })
       });
+
+      if (response.status === 402) {
+        toast.error('No premium credits remaining');
+        setUsePremium(false);
+        setLoading(false);
+        await refreshCredits();
+        return;
+      }
 
       if (!response.ok) throw new Error('Failed to generate bio');
 
@@ -52,7 +64,8 @@ export default function CharacterBio() {
         }
       }
 
-      toast.success('Biography generated!');
+      toast.success(usePremium ? 'Premium biography generated!' : 'Biography generated!');
+      if (usePremium) await refreshCredits();
     } catch (error) {
       console.error('Error:', error);
       toast.error('Failed to generate biography');
@@ -106,6 +119,8 @@ export default function CharacterBio() {
           <option>Academic Deep-Dive</option>
         </select>
       </div>
+      
+      <PremiumToggle enabled={usePremium} onChange={setUsePremium} />
       
       <motion.button
         data-testid="generate-bio-button"

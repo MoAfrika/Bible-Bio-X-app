@@ -161,6 +161,8 @@ class UserResponse(BaseModel):
     created_at: Optional[datetime] = None
     picture: Optional[str] = None
     auth_provider: Optional[str] = None
+    premium_credits: int = 0
+    is_new_user: bool = False
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
@@ -186,6 +188,7 @@ class GenerateBioInput(BaseModel):
     character_name: str
     focus: str
     depth: str
+    use_premium: bool = False
 
 class VerseLookupInput(BaseModel):
     reference: str
@@ -209,6 +212,7 @@ class DevotionalInput(BaseModel):
 class TheologianInput(BaseModel):
     question: str
     complexity: str
+    use_premium: bool = False
 
 class PrayerInput(BaseModel):
     topic: str
@@ -361,7 +365,7 @@ async def google_oauth_session(request: Request, response: Response):
             {"$set": {"user_id": user_id, "picture": picture, "auth_provider": "google"}}
         )
     else:
-        # Create new user
+        # Create new user - grant welcome gift: 3 premium AI generations
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         await db.users.insert_one({
             "user_id": user_id,
@@ -370,6 +374,8 @@ async def google_oauth_session(request: Request, response: Response):
             "picture": picture,
             "role": "user",
             "auth_provider": "google",
+            "premium_credits": 3,
+            "is_new_user": True,
             "created_at": datetime.now(timezone.utc)
         })
     
@@ -397,6 +403,9 @@ async def google_oauth_session(request: Request, response: Response):
         path="/"
     )
     
+    # Fetch fresh user data (with credits + is_new_user flag)
+    fresh_user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
+    
     return {
         "_id": user_id,
         "user_id": user_id,
@@ -404,7 +413,9 @@ async def google_oauth_session(request: Request, response: Response):
         "name": name,
         "picture": picture,
         "role": "user",
-        "auth_provider": "google"
+        "auth_provider": "google",
+        "premium_credits": fresh_user.get("premium_credits", 0),
+        "is_new_user": fresh_user.get("is_new_user", False)
     }
 
 @api_router.get("/auth/me", response_model=UserResponse)
@@ -600,14 +611,71 @@ async def stream_ai_response(prompt: str, system_message: str):
         }
     )
 
+# ==================== PREMIUM CREDITS ====================
+async def consume_premium_credit(user: dict) -> None:
+    """Deduct one premium credit from user. Raises 402 if none available."""
+    user_id = user.get("user_id")
+    if not user_id:
+        # JWT user - use email to identify
+        result = await db.users.update_one(
+            {"email": user["email"], "premium_credits": {"$gt": 0}},
+            {"$inc": {"premium_credits": -1}}
+        )
+    else:
+        result = await db.users.update_one(
+            {"user_id": user_id, "premium_credits": {"$gt": 0}},
+            {"$inc": {"premium_credits": -1}}
+        )
+    if result.modified_count == 0:
+        raise HTTPException(
+            status_code=402,
+            detail="No premium credits remaining. Upgrade to continue enjoying premium AI generations."
+        )
+
+@api_router.get("/user/credits")
+async def get_credits(user: dict = Depends(get_current_user)):
+    return {
+        "premium_credits": user.get("premium_credits", 0),
+        "auth_provider": user.get("auth_provider", "email")
+    }
+
+@api_router.post("/user/dismiss-welcome")
+async def dismiss_welcome(user: dict = Depends(get_current_user)):
+    user_id = user.get("user_id")
+    if user_id:
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"is_new_user": False}}
+        )
+    else:
+        await db.users.update_one(
+            {"email": user["email"]},
+            {"$set": {"is_new_user": False}}
+        )
+    return {"message": "Welcome dismissed"}
+
 @api_router.post("/generate/bio")
 async def generate_bio(input: GenerateBioInput, user: dict = Depends(get_current_user)):
+    if input.use_premium:
+        await consume_premium_credit(user)
+    
     system_message = "You are a biblical scholar and theologian. Provide detailed, accurate, and insightful character biographies from the Bible."
+    
+    premium_note = ""
+    if input.use_premium:
+        premium_note = """
+
+PREMIUM MODE: Produce an extensive, richly-detailed biography (2x normal length). Include:
+- Cross-references to at least 5 relevant scripture passages
+- Historical/geographical context of their era
+- Multiple perspectives from church tradition (Patristic, Reformed, contemporary)
+- Character psychology and inner spiritual journey
+- Legacy in Jewish and Christian thought"""
     
     prompt = f"""Generate a comprehensive biography for {input.character_name} from the Bible.
 
 Focus: {input.focus}
-Depth: {input.depth}
+Depth: {input.depth}{premium_note}
 
 {"For an Academic Deep-Dive, include:" if input.depth == "Academic Deep-Dive" else ""}
 {"- Exegetical Framework & Historiography" if input.depth == "Academic Deep-Dive" else ""}
@@ -686,11 +754,25 @@ Make it encouraging and personal."""
 
 @api_router.post("/generate/theologian")
 async def generate_theologian(input: TheologianInput, user: dict = Depends(get_current_user)):
+    if input.use_premium:
+        await consume_premium_credit(user)
+    
     system_message = "You are a theologian. Answer questions about theology, doctrine, and biblical interpretation with accuracy and clarity."
+    
+    premium_note = ""
+    if input.use_premium:
+        premium_note = """
+
+PREMIUM MODE: Provide a deeper, multi-perspective answer (3x normal length). Include:
+- The historical development of this doctrine
+- How different traditions (Catholic, Orthodox, Protestant) approach it
+- Key biblical passages that inform this teaching (at least 4)
+- Common misconceptions and pastoral applications
+- Recommended further reading"""
     
     prompt = f"""Answer this theological question: {input.question}
 
-Complexity level: {input.complexity}
+Complexity level: {input.complexity}{premium_note}
 
 {"Explain in simple terms suitable for a 5-year-old." if input.complexity == "Explain Like I'm 5" else ""}
 {"Provide a simplified but accurate explanation." if input.complexity == "Simplified" else ""}

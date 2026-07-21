@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { Sun, Moon, LogOut } from 'lucide-react';
+import { Sun, Moon, LogOut, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
 export default function Settings() {
-  const { user, logout } = useAuth();
+  const { user, logout, credits } = useAuth();
   const navigate = useNavigate();
   const [theme, setTheme] = useState('dark');
 
@@ -77,6 +77,28 @@ export default function Settings() {
           <div className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex-shrink-0" style={{ background: 'var(--elevated)', color: 'var(--primary)' }}>
             {user?.role}
           </div>
+        </div>
+      </div>
+
+      <div className="glass p-4 rounded-xl flex items-center justify-between" data-testid="premium-credits-card">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center"
+            style={{ background: 'var(--elevated)' }}
+          >
+            <Sparkles className="w-5 h-5 text-[var(--primary)]" strokeWidth={1.5} />
+          </div>
+          <div>
+            <div className="text-sm font-semibold">Premium Credits</div>
+            <div className="text-[10px] text-[var(--text-secondary)]">Deeper AI generations</div>
+          </div>
+        </div>
+        <div
+          className="text-2xl font-bold"
+          style={{ color: 'var(--primary)', fontFamily: 'Cormorant Garamond, serif' }}
+          data-testid="credits-count"
+        >
+          {credits}
         </div>
       </div>
 

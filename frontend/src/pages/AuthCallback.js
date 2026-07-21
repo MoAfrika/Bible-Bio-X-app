@@ -4,12 +4,14 @@ import { motion } from 'framer-motion';
 import { BookOpen, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { useAuth } from '../context/AuthContext';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
 export default function AuthCallback() {
   const navigate = useNavigate();
+  const { checkAuth } = useAuth();
   const hasProcessed = useRef(false);
 
   useEffect(() => {
@@ -39,6 +41,8 @@ export default function AuthCallback() {
 
         // Clear hash from URL
         window.history.replaceState(null, '', window.location.pathname);
+        // Refresh AuthContext so is_new_user + credits are set for welcome modal
+        await checkAuth();
         toast.success(`Welcome, ${data.name}!`);
         navigate('/app', { replace: true, state: { user: data } });
       } catch (error) {
@@ -49,7 +53,7 @@ export default function AuthCallback() {
     };
 
     processSession();
-  }, [navigate]);
+  }, [navigate, checkAuth]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] px-6">

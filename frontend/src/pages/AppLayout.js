@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import BottomNav from '../components/layout/BottomNav';
+import WelcomeGiftModal from '../components/WelcomeGiftModal';
 import { motion } from 'framer-motion';
 
 const rootViews = new Set(['/app', '/app/explore', '/app/prayer', '/app/settings']);
@@ -55,6 +56,7 @@ export default function AppLayout() {
       </motion.main>
       
       <BottomNav />
+      <WelcomeGiftModal />
     </div>
   );
 }
