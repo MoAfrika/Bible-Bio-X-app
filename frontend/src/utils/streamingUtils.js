@@ -8,7 +8,7 @@ export const useStreamingResponse = (debounceMs = 100) => {
   let debounceTimer = null;
 
   const flushBuffer = (onUpdate) => {
-    if (textBuffer) {
+    if (textBuffer && onUpdate) {
       onUpdate(textBuffer);
     }
   };
@@ -29,20 +29,23 @@ export const useStreamingResponse = (debounceMs = 100) => {
     }
   };
 
+  const reset = () => {
+    textBuffer = '';
+    cleanup();
+  };
+
   return {
     addToBuffer,
     flushBuffer,
     cleanup,
-    reset: () => {
-      textBuffer = '';
-      cleanup();
-    }
+    reset
   };
 };
 
 /**
  * Generic fetch and stream handler
  * Handles SSE-format responses with debouncing
+ * NOT a React hook - use within async contexts only
  */
 export const fetchAndStream = async (
   url,
@@ -52,6 +55,7 @@ export const fetchAndStream = async (
   debounceMs = 100
 ) => {
   const textBuffer = useStreamingResponse(debounceMs);
+  let streamSucceeded = false;
 
   try {
     const response = await fetch(url, {
@@ -70,6 +74,7 @@ export const fetchAndStream = async (
         const { done, value } = await reader.read();
         if (done) {
           textBuffer.flushBuffer(onUpdate);
+          streamSucceeded = true;
           onComplete?.();
           break;
         }
@@ -82,6 +87,7 @@ export const fetchAndStream = async (
             const content = line.slice(6);
             if (content === '[DONE]') {
               textBuffer.flushBuffer(onUpdate);
+              streamSucceeded = true;
               onComplete?.();
               return;
             }
