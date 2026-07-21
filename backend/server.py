@@ -7,9 +7,10 @@ from bson import ObjectId
 import os
 import logging
 import secrets
+import random
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict
 import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
@@ -28,6 +29,11 @@ db = client[os.environ['DB_NAME']]
 # Constants
 JWT_ALGORITHM = "HS256"
 BIBLE_API_BASE = "https://bible-api.com"
+VERSE_CACHE_TTL_HOURS = 24  # Cache Bible verses for 24 hours
+
+# In-memory cache for Bible verses
+verse_cache: Dict[str, dict] = {}
+verse_cache_expires: Dict[str, datetime] = {}
 
 # Create the main app
 app = FastAPI()
@@ -69,6 +75,50 @@ def create_refresh_token(user_id: str) -> str:
         "type": "refresh"
     }
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
+
+# ==================== RATE LIMITING ====================
+# Simple in-memory rate limiter for AI generation endpoints
+ai_request_count: Dict[str, List[datetime]] = {}
+MAX_AI_REQUESTS_PER_MINUTE = 10
+
+def check_rate_limit(user_id: str) -> None:
+    """Check if user has exceeded AI request rate limit (10 requests/minute)."""
+    now = datetime.now(timezone.utc)
+    one_minute_ago = now - timedelta(minutes=1)
+    
+    if user_id not in ai_request_count:
+        ai_request_count[user_id] = []
+    
+    # Clean up old entries
+    ai_request_count[user_id] = [
+        req_time for req_time in ai_request_count[user_id] 
+        if req_time > one_minute_ago
+    ]
+    
+    if len(ai_request_count[user_id]) >= MAX_AI_REQUESTS_PER_MINUTE:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: {MAX_AI_REQUESTS_PER_MINUTE} requests per minute allowed"
+        )
+    
+    ai_request_count[user_id].append(now)
+
+# ==================== VERSE CACHING ====================
+def get_cached_verse(reference: str) -> Optional[dict]:
+    """Get cached verse if still valid."""
+    if reference in verse_cache_expires:
+        if datetime.now(timezone.utc) < verse_cache_expires[reference]:
+            return verse_cache.get(reference)
+        else:
+            # Expired, remove from cache
+            verse_cache.pop(reference, None)
+            verse_cache_expires.pop(reference, None)
+    return None
+
+def cache_verse(reference: str, data: dict) -> None:
+    """Cache a verse with TTL."""
+    verse_cache[reference] = data
+    verse_cache_expires[reference] = datetime.now(timezone.utc) + timedelta(hours=VERSE_CACHE_TTL_HOURS)
 
 # ==================== AUTH HELPER ====================
 async def get_current_user(request: Request) -> dict:
@@ -519,16 +569,25 @@ async def reset_password(input: ResetPasswordInput):
 # ==================== BIBLE API ====================
 @api_router.get("/bible/verse")
 async def get_verse(reference: str):
+    # Check cache first
+    cached = get_cached_verse(reference)
+    if cached:
+        logger.info(f"Bible verse from cache: {reference}")
+        return cached
+    
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{BIBLE_API_BASE}/{reference}")
             if response.status_code == 200:
                 data = response.json()
-                return {
+                result = {
                     "reference": data.get("reference"),
                     "text": data.get("text"),
                     "translation": data.get("translation_name", "KJV")
                 }
+                # Cache the result
+                cache_verse(reference, result)
+                return result
             else:
                 raise HTTPException(status_code=404, detail="Verse not found")
     except Exception as e:
@@ -542,9 +601,8 @@ async def get_verse_of_day():
         {"reference": "Philippians 4:13", "text": "I can do all things through Christ who strengthens me."},
         {"reference": "Jeremiah 29:11", "text": "For I know the plans I have for you, declares the Lord, plans to prosper you and not to harm you, plans to give you hope and a future."},
         {"reference": "Psalm 46:1", "text": "God is our refuge and strength, an ever-present help in trouble."},
-        {"reference": "Proverbs 3:5-6", "text": "Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight."}
+        {"reference": "Proverbs 3:5-6", "text": "Trust in the Lord with all your heart and lean not on your own understanding; in all your ways submit to him, and he will make your paths straight[...]
     ]
-    import random
     verse = random.choice(verses)
     verse["translation"] = "NIV"
     return verse
@@ -586,7 +644,7 @@ async def get_saved_verses(user: dict = Depends(get_current_user)):
     verses = await db.saved_verses.find(
         {"user_id": user["_id"]},
         {"_id": 0}
-    ).sort("saved_at", -1).to_list(100)
+    ).sort("saved_at", -1).limit(100).to_list(100)
     return verses
 
 @api_router.delete("/verses/{verse_id}")
@@ -732,6 +790,8 @@ async def dismiss_welcome(user: dict = Depends(get_current_user)):
 
 @api_router.post("/generate/bio")
 async def generate_bio(input: GenerateBioInput, user: dict = Depends(get_current_user)):
+    check_rate_limit(user["_id"])
+    
     if input.use_premium:
         await consume_premium_credit(user)
     
@@ -765,6 +825,8 @@ Format the response with clear sections using HTML tags (h4, p, div, ul) for pro
 
 @api_router.post("/generate/explainer")
 async def generate_explainer(input: VerseExplainerInput, user: dict = Depends(get_current_user)):
+    check_rate_limit(user["_id"])
+    
     system_message = "You are a biblical scholar. Explain Bible verses with clarity, historical context, and practical application."
     
     prompt = f"""Explain the verse {input.reference} with a focus on: {input.style}
@@ -780,6 +842,8 @@ Format using HTML tags for clarity."""
 
 @api_router.post("/generate/sermon")
 async def generate_sermon(input: SermonInput, user: dict = Depends(get_current_user)):
+    check_rate_limit(user["_id"])
+    
     system_message = "You are an experienced pastor and sermon writer. Create compelling, biblical, and practical sermon outlines."
     
     prompt = f"""Create a sermon outline on the topic: {input.topic}
@@ -798,6 +862,8 @@ Format with clear sections using HTML tags."""
 
 @api_router.post("/generate/parable")
 async def generate_parable(input: ParableInput, user: dict = Depends(get_current_user)):
+    check_rate_limit(user["_id"])
+    
     system_message = "You are a biblical scholar specializing in parables. Explain parables with depth, context, and practical wisdom."
     
     prompt = f"""Analyze the parable: {input.parable_name}
@@ -815,6 +881,8 @@ Format with HTML tags for readability."""
 
 @api_router.post("/generate/devotional")
 async def generate_devotional(input: DevotionalInput, user: dict = Depends(get_current_user)):
+    check_rate_limit(user["_id"])
+    
     system_message = "You are a devotional writer. Create inspiring, biblical, and practical daily devotionals."
     
     prompt = f"""Create a daily devotional for {input.date}.
@@ -830,6 +898,8 @@ Make it encouraging and personal."""
 
 @api_router.post("/generate/theologian")
 async def generate_theologian(input: TheologianInput, user: dict = Depends(get_current_user)):
+    check_rate_limit(user["_id"])
+    
     if input.use_premium:
         await consume_premium_credit(user)
     
@@ -858,6 +928,8 @@ Complexity level: {input.complexity}{premium_note}
 
 @api_router.post("/generate/prayer")
 async def generate_prayer(input: PrayerInput, user: dict = Depends(get_current_user)):
+    check_rate_limit(user["_id"])
+    
     system_message = "You are a prayer guide. Compose heartfelt, biblical prayers that reflect various tones and concerns."
     
     prompt = f"""Compose a prayer about: {input.topic}
@@ -870,6 +942,8 @@ Make it sincere, biblical, and suitable for personal use. Format it as a prayer.
 
 @api_router.post("/generate/story")
 async def generate_story(input: StoryInput, user: dict = Depends(get_current_user)):
+    check_rate_limit(user["_id"])
+    
     system_message = "You are a children's Bible story writer. Create engaging, age-appropriate stories that teach biblical values."
     
     prompt = f"""Create a children's Bible story about: {input.topic}
@@ -886,10 +960,22 @@ Make it:
 # ==================== STARTUP ====================
 @app.on_event("startup")
 async def startup_event():
+    # Create essential indexes
     await db.users.create_index("email", unique=True)
+    await db.users.create_index("user_id")
     await db.users.create_index("referral_code", sparse=True)
+    
+    # Session indexes
+    await db.user_sessions.create_index("session_token", unique=True)
+    await db.user_sessions.create_index("user_id")
+    
+    # Auth/security indexes
     await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
     await db.login_attempts.create_index("identifier")
+    
+    # Data lookup indexes
+    await db.mood_checks.create_index("user_id")
+    await db.saved_verses.create_index("user_id")
     
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@biblebio.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "BibleAdmin2024!")
